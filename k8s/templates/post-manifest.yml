@@ -1,0 +1,87 @@
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: post-service
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: post-pod
+  type: NodePort
+  ports:
+    - protocol: "TCP"
+      port: 8081
+      targetPort: 8081
+      nodePort: 30082
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-pod
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: post-pod
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+        app: post-pod
+        owner: epamdmitriyshumskiy
+    spec:
+      containers:
+        - name: post-container
+          image: epamdmitriyshumskiy/kuber_post:3.0.0
+          ports:
+            - containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+              httpHeaders:
+                - name: Custom-Header
+                  value: Awesome
+            initialDelaySeconds: 25
+            periodSeconds: 60
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 8081
+              httpHeaders:
+                - name: Custom-Header
+                  value: Awesome
+            initialDelaySeconds: 25
+            periodSeconds: 60
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-conf
+                  key: post-host
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-conf
+                  key: post-name
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: postgres_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: postgres_password
+            - name: port
+              value: {{ .Values.port | quote}}
+            - name: cluster_ip
+              value: {{ .Values.cluster_ip | quote }}

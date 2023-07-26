@@ -1,0 +1,15 @@
+#spring:
+#  jpa:
+#    properties:
+#      hibernate:
+#        dialect: org.hibernate.dialect.PostgreSQLDialect
+#        jdbc:
+#          lob:
+#            non_contextual_creation: true
+#    hibernate:
+#      ddl-auto: none
+#  datasource:
+#    url: jdbc:postgresql://userdb:5432/userdb
+#    username: ${POSTGRES_USERNAME}
+#    password: ${POSTGRES_PASSWORD}
+#    driver-class-name: org.postgresql.Driver

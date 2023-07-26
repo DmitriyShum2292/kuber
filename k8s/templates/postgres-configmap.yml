@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-conf
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- template "mychart.version" }}
+    {{- template "mychart.date" }}
+data:
+  post-host: postdb
+  post-name: postdb
+  user-host: userdb
+  user-name: userdb
+  initdb.sql: |
+    CREATE TABLE post (id BIGINT PRIMARY KEY, author_id BIGINT, text VARCHAR(256), posted_at TIMESTAMP, topic VARCHAR(256));
+    CREATE TABLE app_user (id BIGINT PRIMARY KEY, name VARCHAR(256), amount_of_posts INT);

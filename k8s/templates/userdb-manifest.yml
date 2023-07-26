@@ -1,0 +1,135 @@
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: userdb
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: userdb
+    tier: database
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: userdb
+    tier: database
+  clusterIP: None
+
+---
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: user-class
+provisioner: kubernetes.io/gce-pd
+parameters:
+  type: pd-standard
+  fstype: ext4
+  replication-type: none
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: user-volume
+
+spec:
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  capacity:
+    storage: 2Gi
+  hostPath:
+    path: /run/desktop/mnt/host/c/kuber-user
+    type: DirectoryOrCreate
+  storageClassName: user-class
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-pv-claim
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: userdb
+    tier: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: user-class
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: userdb
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: userdb
+    tier: database
+
+spec:
+  selector:
+    matchLabels:
+      app: userdb
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: userdb
+        tier: database
+    spec:
+      containers:
+        - name: userdb
+          image: postgres:15.1-bullseye
+          imagePullPolicy: "IfNotPresent"
+          readinessProbe:
+            exec:
+              command: [ "psql", "-w", "-U", "postgres", "-d", "userdb", "-c", "SELECT*FROM app_user" ]
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: [ "psql", "-w", "-U", "postgres", "-d", "userdb", "-c", "SELECT*FROM app_user" ]
+            initialDelaySeconds: 5
+            timeoutSeconds: 10
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: postgres_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: postgres_password
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-conf
+                  key: user-name
+
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - name: postgres-initdb
+              mountPath: /docker-entrypoint-initdb.d
+            - name: user-persistent-storage
+              mountPath: var/lib/postgresql/data
+
+      volumes:
+        - name: postgres-initdb
+          configMap:
+            name: postgres-conf
+        - name: user-persistent-storage
+          persistentVolumeClaim:
+            claimName: user-pv-claim
+

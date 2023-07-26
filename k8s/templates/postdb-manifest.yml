@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postdb
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: postdb
+    tier: database
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: postdb
+    tier: database
+  clusterIP: None
+
+---
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: post-class
+provisioner: kubernetes.io/gce-pd
+parameters:
+  type: pd-standard
+  fstype: ext4
+  replication-type: none
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: post-volume
+
+spec:
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  capacity:
+    storage: 1Gi
+  hostPath:
+    path: /run/desktop/mnt/host/c/kuber-post
+    type: DirectoryOrCreate
+  storageClassName: post-class
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: post-pv-claim
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: postdb
+    tier: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: post-class
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postdb
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: postdb
+    tier: database
+
+spec:
+  selector:
+    matchLabels:
+      app: postdb
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: postdb
+        tier: database
+    spec:
+      containers:
+        - name: postdb
+          image: postgres:15.1-bullseye
+          imagePullPolicy: "IfNotPresent"
+          readinessProbe:
+            exec:
+              command: [ "psql", "-w", "-U", "postgres", "-d", "postdb", "-c", "SELECT*FROM post" ]
+            initialDelaySeconds: 5
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: [ "psql", "-w", "-U", "postgres", "-d", "postdb", "-c", "SELECT*FROM post" ]
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: postgres_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: postgres_password
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-conf
+                  key: post-name
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - name: postgres-initdb
+              mountPath: /docker-entrypoint-initdb.d
+            - name: post-persistent-storage
+              mountPath: var/lib/postgresql/data
+
+      volumes:
+        - name: postgres-initdb
+          configMap:
+            name: postgres-conf
+        - name: post-persistent-storage
+          persistentVolumeClaim:
+            claimName: post-pv-claim
+
